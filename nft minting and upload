@@ -1,0 +1,144 @@
+const serverUrl = "https://0erlqbhytxjl.usemoralis.com:2053/server";
+const appId = "KFNDGj1htqTiQygjIwWjHuSxt4QP6OXb2tQ19pT4";
+Moralis.start({ serverUrl, appId });
+
+let user;
+async function login(){
+    user = Moralis.User.current();  
+    await Moralis.Web3.authenticate()
+    console.log("logged in user:", user);
+    console.log(user.get("ethAddress"));
+    document.querySelector("#app").style.display = "block";
+    document.querySelector("#login_button").style.display = "none";
+
+}
+
+//build table NFTs
+
+async function getNFTs(){
+    let chain= document.getElementById("nft-chain").value;
+  
+    const options = { chain: chain};
+    const nft = await Moralis.Web3API.account.getNFTs({chain: chain}).then(buildTableNFT);
+  }
+  
+  function buildTableNFT(_data){
+    console.log(_data)
+    let data = _data.result;
+    console.log(data)
+    document.getElementById("resultNFT").innerHTML = `<table class="table table-dark table-striped" id="nftTable">
+                                                            </table>`;
+    const table = document.getElementById("nftTable");
+    const rowHeader = `<thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Contract</th>
+                            </tr>
+                        </thead>`
+    table.innerHTML += rowHeader;
+    for (let i=0; i < data.length; i++){
+        let row = `<tr>
+                        <td>${data[i].token_id}</td>
+                        <td>${data[i].contract_type}</td>
+                        <td>${data[i].token_address}</td>
+                    </tr>`
+        table.innerHTML += row
+    }
+  }
+
+  async function getNFT() {
+    let address= document.getElementById("nftaddress").value;
+    let chain= document.getElementById("nftchain").value;
+ 
+    const options = { chain: chain,address: address};
+    const nfts = await Moralis.Web3.getNFTs(options);
+    console.log(nfts);
+ 
+    nfts.forEach( e => {
+      let url = e.token_uri;
+ 
+      
+      fetch(url)
+      .then(response => response.json())
+      .then(data => {
+ 
+       fixURL = (url) => {
+         if (url.startWith("ipfs")) {
+           return "https://ipfs.moralis.io:2053/ipfs/" + url.split("ipfs://").slice(-1)
+         }
+         else{
+           return url + "?format=json"
+         }
+       }
+           let currentDiv = document.getElementById("content");
+           
+           let content = `
+           <div class="nft">
+           <b>${data.name}</b>   
+           <img width=100 height=100 src="${data.image}"/> 
+           </div>
+           `
+           currentDiv.innerHTML += content;
+      })
+    })
+  }
+
+
+
+async function submit(){
+// get image data
+const input = document.querySelector("#input_image");
+let data = input.files[0];
+//upload image to ipfs
+const imageFile = new Moralis.File(data.name, data);
+await imageFile.saveIPFS();
+let imageHash = imageFile.hash();
+console.log(imageHash)
+console.log(imageFile.ipfs());
+//create metadata with imagehash and data
+let metadata = {
+    name: document.querySelector("#input_name").value,
+    description: document.querySelector("#input_description").value,
+    image: "/ipfs/" + imageHash
+}
+//upload metadata to IPFS
+const jsonFile = new Moralis.File("metadata.json", {base64: btoa(JSON.stringify(metadata))});
+await jsonFile.saveIPFS();
+let metadataHash = jsonFile.hash();
+console.log(metadataHash);
+
+//upload to Rarible
+let _type = String(document.querySelector('#nfttype').value);
+let _chain = String(document.querySelector('#nftchain').value);
+let _royalties = String(document.querySelector('#royalties').value);
+
+let userAddress = user.get("ethAddress");
+let tokenUri = '/ipfs/' + metadataHash;
+
+const options = ({type: _type, chain: _chain, royalties: _royalties, userAddress: userAddress, tokenUri: tokenUri});
+let res = await Moralis.Plugins.rarible.lazyMint({options});
+console.log(res);
+
+let token_address = res.data.result.tokenAddress;
+let token_id = res.data.result.tokenId;
+let url = `https://rinkeby.rarible.com/token/${token_address}:${token_id}` 
+document.querySelector("#success_message").innerHTML =
+`NFT Minted. <a target="_blank" href="${url}">view NFT</a>`
+
+document.querySelector("#success_message").style.display = "block";
+setTimeout(() => {
+    document.querySelector("#success_message").style.display = "none";
+},10000)
+}
+
+document.querySelector("#submit_button").onclick = submit;
+
+ //logout
+ async function logout() {
+  await Moralis.User.logOut();
+  console.log("logged out");
+  alert ( `Successfully logged out  `);
+  location.href = "login.html";   
+ }
+document.getElementById("btn-logout").onclick = logout;  
